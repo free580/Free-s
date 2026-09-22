@@ -1,4 +1,4 @@
-name: Build zodys v2
+name: Build zodys v3
 
 on:
   workflow_dispatch:
@@ -6,7 +6,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -15,65 +14,54 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install NDK + CMake + platform
+      - name: Install SDK packages
         run: |
-          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          echo "SDK=$SDK"
-          SM=""
-          for p in "$SDK/cmdline-tools/latest/bin/sdkmanager" \
-                   "$SDK/tools/bin/sdkmanager" \
-                   "$SDK/cmdline-tools/bin/sdkmanager"; do
-            if [ -f "$p" ]; then SM="$p"; break; fi
-          done
-          if [ -z "$SM" ]; then
-            echo "sdkmanager not found, listing:"
-            ls "$SDK"
-            exit 1
-          fi
-          echo "sdkmanager=$SM"
+          SDK=/usr/local/lib/android/sdk
+          export ANDROID_HOME=$SDK
+          export ANDROID_SDK_ROOT=$SDK
+          echo "ANDROID_HOME=$SDK" >> $GITHUB_ENV
+          SM="$SDK/cmdline-tools/16.0/bin/sdkmanager"
+          ls -la "$SM"
           yes | "$SM" --licenses > /dev/null 2>&1 || true
-          "$SM" --install "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125" "cmake;3.22.1" 2>&1 | tail -20
-          echo "--- installed ---"
-          ls "$SDK/ndk" 2>/dev/null || echo "NO NDK"
+          "$SM" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125" 2>&1 | tail -20
+          echo "--- NDK ---"
+          ls "$SDK/ndk" || echo "NO NDK"
 
       - name: Build arm64-v8a
         run: |
-          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          SDK=/usr/local/lib/android/sdk
           TC="$SDK/ndk/26.1.10909125/build/cmake/android.toolchain.cmake"
           ls -la "$TC"
-          mkdir -p out/so/arm64-v8a
-          cmake -S . -B b64 \
+          SDK_ROOT="$SDK" cmake -S . -B b64 \
             -DCMAKE_TOOLCHAIN_FILE="$TC" \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-23 \
             -DANDROID_STL=c++_static \
-            -DCMAKE_BUILD_TYPE=Release
-          cmake --build b64 -j4 2>&1 | tail -30
+            -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -20
+          cmake --build b64 -j4 2>&1 | tail -40
+          mkdir -p out/so/arm64-v8a
           find b64 -name "libzodys.so" -exec cp {} out/so/arm64-v8a/ \;
           ls -la out/so/arm64-v8a/
 
       - name: Build armeabi-v7a
         run: |
-          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          SDK=/usr/local/lib/android/sdk
           TC="$SDK/ndk/26.1.10909125/build/cmake/android.toolchain.cmake"
-          mkdir -p out/so/armeabi-v7a
-          cmake -S . -B b32 \
+          SDK_ROOT="$SDK" cmake -S . -B b32 \
             -DCMAKE_TOOLCHAIN_FILE="$TC" \
             -DANDROID_ABI=armeabi-v7a \
             -DANDROID_PLATFORM=android-23 \
             -DANDROID_STL=c++_static \
-            -DCMAKE_BUILD_TYPE=Release
-          cmake --build b32 -j4 2>&1 | tail -30
+            -DCMAKE_BUILD_TYPE=Release 2>&1 | tail -20
+          cmake --build b32 -j4 2>&1 | tail -40
+          mkdir -p out/so/armeabi-v7a
           find b32 -name "libzodys.so" -exec cp {} out/so/armeabi-v7a/ \;
           ls -la out/so/armeabi-v7a/
 
       - name: Java to smali
         continue-on-error: true
         run: |
-          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          SDK=/usr/local/lib/android/sdk
           mkdir -p cls out/smali
           javac -nowarn -classpath "$SDK/platforms/android-34/android.jar" -d cls Surface.java 2>&1 | head -30
           (cd cls && jar cf ../classes.jar .)
