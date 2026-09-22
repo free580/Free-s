@@ -1,4 +1,4 @@
-name: Build zodys v3
+name: Build zodys v4
 
 on:
   workflow_dispatch:
@@ -14,25 +14,34 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install SDK packages
+      - name: Install Android SDK from scratch
         run: |
-          SDK=/usr/local/lib/android/sdk
+          SDK=$HOME/android-sdk
+          mkdir -p "$SDK"
+          cd /tmp
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdtools.zip
+          unzip -q cmdtools.zip
+          mkdir -p "$SDK/cmdline-tools/latest"
+          mv cmdline-tools/* "$SDK/cmdline-tools/latest/"
           export ANDROID_HOME=$SDK
           export ANDROID_SDK_ROOT=$SDK
           echo "ANDROID_HOME=$SDK" >> $GITHUB_ENV
-          SM="$SDK/cmdline-tools/16.0/bin/sdkmanager"
+          echo "ANDROID_SDK_ROOT=$SDK" >> $GITHUB_ENV
+          echo "$SDK/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          SM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          chmod +x "$SM"
           ls -la "$SM"
           yes | "$SM" --licenses > /dev/null 2>&1 || true
-          "$SM" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125" 2>&1 | tail -20
+          "$SM" --install "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125" 2>&1 | tail -25
           echo "--- NDK ---"
-          ls "$SDK/ndk" || echo "NO NDK"
+          ls "$SDK/ndk"
 
       - name: Build arm64-v8a
         run: |
-          SDK=/usr/local/lib/android/sdk
+          SDK=$HOME/android-sdk
           TC="$SDK/ndk/26.1.10909125/build/cmake/android.toolchain.cmake"
           ls -la "$TC"
-          SDK_ROOT="$SDK" cmake -S . -B b64 \
+          cmake -S . -B b64 \
             -DCMAKE_TOOLCHAIN_FILE="$TC" \
             -DANDROID_ABI=arm64-v8a \
             -DANDROID_PLATFORM=android-23 \
@@ -45,9 +54,9 @@ jobs:
 
       - name: Build armeabi-v7a
         run: |
-          SDK=/usr/local/lib/android/sdk
+          SDK=$HOME/android-sdk
           TC="$SDK/ndk/26.1.10909125/build/cmake/android.toolchain.cmake"
-          SDK_ROOT="$SDK" cmake -S . -B b32 \
+          cmake -S . -B b32 \
             -DCMAKE_TOOLCHAIN_FILE="$TC" \
             -DANDROID_ABI=armeabi-v7a \
             -DANDROID_PLATFORM=android-23 \
@@ -61,7 +70,7 @@ jobs:
       - name: Java to smali
         continue-on-error: true
         run: |
-          SDK=/usr/local/lib/android/sdk
+          SDK=$HOME/android-sdk
           mkdir -p cls out/smali
           javac -nowarn -classpath "$SDK/platforms/android-34/android.jar" -d cls Surface.java 2>&1 | head -30
           (cd cls && jar cf ../classes.jar .)
